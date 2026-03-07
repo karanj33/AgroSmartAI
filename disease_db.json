@@ -1,0 +1,26 @@
+{
+  "Tomato_Early_Blight": {
+    "cause": "Fungal infection caused by Alternaria solani, often thriving in humid conditions.",
+    "pesticide": "Apply Mancozeb or Chlorothalonil based fungicides every 7-10 days.",
+    "fertilizer": "Use Potassium-rich NPK fertilizer to strengthen plant cell walls.",
+    "prevention": "Ensure proper spacing for airflow, remove lower infected leaves, and avoid overhead watering."
+  },
+  "Tomato_Late_Blight": {
+    "cause": "Oomycete pathogen Phytophthora infestans, highly destructive in cool, wet weather.",
+    "pesticide": "Copper-based fungicides or systemic fungicides like Metalaxyl.",
+    "fertilizer": "Balanced organic compost to improve overall plant vigor.",
+    "prevention": "Plant resistant varieties, destroy infected debris, and monitor weather for high-risk periods."
+  },
+  "Apple_Scab": {
+    "cause": "Fungus Venturia inaequalis that overwinters in fallen leaves.",
+    "pesticide": "Captan or Myclobutanil fungicides during the green tip stage.",
+    "fertilizer": "Nitrogen-balanced fertilizer in early spring.",
+    "prevention": "Rake and destroy fallen leaves in autumn to reduce inoculum levels."
+  },
+  "Healthy": {
+    "cause": "N/A - Plant is in optimal condition.",
+    "pesticide": "None required. Maintain regular monitoring.",
+    "fertilizer": "Standard maintenance fertilizer according to crop type.",
+    "prevention": "Continue good agricultural practices: proper watering, sunlight, and soil health."
+  }
+}

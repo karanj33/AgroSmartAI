@@ -1,0 +1,8 @@
+{
+  "name": "AgroSmart AI",
+  "description": "Complete AI-powered Smart Agriculture Decision System for disease detection, soil health, predictive analytics, and real-time farming alerts.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

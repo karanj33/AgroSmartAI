@@ -3,7 +3,7 @@ import { Send, MessageCircle, Volume2, X, User, Bot, Loader2 } from 'lucide-reac
 import { motion, AnimatePresence } from 'motion/react';
 
 const ChatAssistant = ({ 
-  messages, onSendMessage, isTyping, onClose, onSpeak, t 
+  messages, onSendMessage, isTyping, onClose, onSpeak, onStop, isSpeaking, t 
 }) => {
   const [input, setInput] = useState('');
   const scrollRef = useRef(null);
@@ -40,9 +40,21 @@ const ChatAssistant = ({
             <p className="text-[10px] uppercase tracking-widest opacity-70">{t.online}</p>
           </div>
         </div>
-        <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
-          <X size={20} />
-        </button>
+        <div className="flex items-center gap-2">
+          {isSpeaking && (
+            <button 
+              onClick={onStop}
+              className="p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest"
+              title="Stop Speaking"
+            >
+              <X size={16} />
+              Stop
+            </button>
+          )}
+          <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+            <X size={20} />
+          </button>
+        </div>
       </div>
 
       {/* Messages */}
@@ -69,13 +81,24 @@ const ChatAssistant = ({
                   {msg.content}
                 </div>
                 {msg.role === 'assistant' && (
-                  <button 
-                    onClick={() => onSpeak(msg.content)}
-                    className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 uppercase tracking-widest hover:opacity-70 transition-opacity"
-                  >
-                    <Volume2 size={12} />
-                    {t.listen}
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button 
+                      onClick={() => onSpeak(msg.content)}
+                      className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 uppercase tracking-widest hover:opacity-70 transition-opacity"
+                    >
+                      <Volume2 size={12} />
+                      {t.listen}
+                    </button>
+                    {isSpeaking && (
+                      <button 
+                        onClick={onStop}
+                        className="flex items-center gap-1 text-[10px] font-bold text-red-500 uppercase tracking-widest hover:opacity-70 transition-opacity"
+                      >
+                        <X size={12} />
+                        {t.stop}
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             </div>

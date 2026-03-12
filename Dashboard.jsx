@@ -25,12 +25,15 @@ const Dashboard = ({
       case 'Healthy':
       case 'Optimal':
       case 'Low':
+      case 'Safe':
         return 'text-emerald-500 bg-emerald-50 border-emerald-100';
       case 'Warning':
       case 'Medium':
+      case 'Moderate':
         return 'text-amber-500 bg-amber-50 border-amber-100';
       case 'Critical':
       case 'High':
+      case 'Low Moisture':
         return 'text-red-500 bg-red-50 border-red-100';
       default:
         return 'text-stone-500 bg-stone-50 border-stone-100';
@@ -38,9 +41,9 @@ const Dashboard = ({
   };
 
   const nutrientData = [
-    { name: 'Nitrogen (N)', value: data.soil_nutrients.nitrogen, full: 100 },
-    { name: 'Phosphorus (P)', value: data.soil_nutrients.phosphorus, full: 100 },
-    { name: 'Potassium (K)', value: data.soil_nutrients.potassium, full: 100 },
+    { name: 'Nitrogen (N)', value: data.soil_nutrients?.nitrogen || 0, full: 100 },
+    { name: 'Phosphorus (P)', value: data.soil_nutrients?.phosphorus || 0, full: 100 },
+    { name: 'Potassium (K)', value: data.soil_nutrients?.potassium || 0, full: 100 },
     { name: 'Calcium (Ca)', value: 45, full: 100 },
     { name: 'Magnesium (Mg)', value: 30, full: 100 },
   ];
@@ -52,30 +55,9 @@ const Dashboard = ({
         <div className="w-full md:w-auto">
           <div className="flex items-center gap-2 mb-2">
             <Globe className="text-emerald-600" size={18} />
-            <span className="text-sm font-bold text-emerald-600 uppercase tracking-widest">{data.weather.location_name || "Global Farm"}</span>
+            <span className="text-sm font-bold text-emerald-600 uppercase tracking-widest">{data.weather?.location_name || "Detecting Location..."}</span>
           </div>
           <h1 className="text-4xl font-serif font-medium text-stone-900 mb-2">Farm Intelligence Center</h1>
-          
-          {/* Location Search */}
-          <form onSubmit={onSearchLocation} className="mt-4 flex gap-2 max-w-md">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={16} />
-              <input 
-                type="text" 
-                value={locationInput}
-                onChange={(e) => setLocationInput(e.target.value)}
-                placeholder={t.searchCity + "..."}
-                className="w-full pl-10 pr-4 py-2 bg-stone-100 border-none rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
-              />
-            </div>
-            <button 
-              type="submit"
-              disabled={isSearchingLocation}
-              className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-all disabled:opacity-50"
-            >
-              {isSearchingLocation ? "..." : "Search"}
-            </button>
-          </form>
         </div>
         <div className="flex flex-wrap gap-3">
           <button 
@@ -118,7 +100,7 @@ const Dashboard = ({
               <span className={`px-3 py-1 text-[10px] font-bold rounded-full uppercase tracking-widest border ${
                 result.severity === 'High' ? 'bg-red-100 text-red-600 border-red-200' : 'bg-amber-100 text-amber-600 border-amber-200'
               }`}>
-                {result.severity} Severity
+                {result.severity || 'Normal'} Severity
               </span>
             </div>
             <h3 className="text-2xl font-serif font-medium text-stone-900 mb-2">{result.disease_name}</h3>
@@ -206,7 +188,7 @@ const Dashboard = ({
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className={`p-6 rounded-[32px] border ${getStatusColor(data.crop_health.status)}`}
+          className={`p-6 rounded-[32px] border ${getStatusColor(data.crop_health?.status)}`}
         >
           <div className="flex justify-between items-start mb-4">
             <div className="p-3 rounded-2xl bg-white/50 backdrop-blur-sm">
@@ -215,8 +197,8 @@ const Dashboard = ({
             <span className="text-xs font-bold uppercase tracking-wider">{t.cropHealth}</span>
           </div>
           <div className="space-y-1">
-            <h3 className="text-3xl font-serif font-bold">{data.crop_health.score}%</h3>
-            <p className="text-sm font-medium opacity-80">{data.crop_health.status}</p>
+            <h3 className="text-3xl font-serif font-bold">{data.crop_health?.score || 0}%</h3>
+            <p className="text-sm font-medium opacity-80">{data.crop_health?.status || 'N/A'}</p>
           </div>
         </motion.div>
 
@@ -224,7 +206,7 @@ const Dashboard = ({
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className={`p-6 rounded-[32px] border ${getStatusColor(data.disease_risk.level)}`}
+          className={`p-6 rounded-[32px] border ${getStatusColor(data.disease_risk?.level)}`}
         >
           <div className="flex justify-between items-start mb-4">
             <div className="p-3 rounded-2xl bg-white/50 backdrop-blur-sm">
@@ -233,8 +215,8 @@ const Dashboard = ({
             <span className="text-xs font-bold uppercase tracking-wider">{t.diseaseRisk}</span>
           </div>
           <div className="space-y-1">
-            <h3 className="text-3xl font-serif font-bold">{data.disease_risk.level}</h3>
-            <p className="text-sm font-medium opacity-80">{data.disease_risk.likely_diseases[0] || 'No threats'}</p>
+            <h3 className="text-3xl font-serif font-bold">{data.disease_risk?.level || 'Low'}</h3>
+            <p className="text-sm font-medium opacity-80">{data.disease_risk?.likely_diseases?.[0] || 'No threats'}</p>
           </div>
         </motion.div>
 
@@ -251,8 +233,8 @@ const Dashboard = ({
             <span className="text-xs font-bold text-stone-400 uppercase tracking-wider">{t.irrigation}</span>
           </div>
           <div className="space-y-1">
-            <h3 className="text-3xl font-serif font-bold text-stone-900">{data.irrigation.needed ? 'Needed' : 'Optimal'}</h3>
-            <p className="text-sm font-medium text-stone-500">{data.irrigation.frequency}</p>
+            <h3 className="text-3xl font-serif font-bold text-stone-900">{data.irrigation?.needed ? 'Needed' : 'Optimal'}</h3>
+            <p className="text-sm font-medium text-stone-500">{data.irrigation?.frequency || 'N/A'}</p>
           </div>
         </motion.div>
 
@@ -260,7 +242,7 @@ const Dashboard = ({
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className={`p-6 rounded-[32px] border ${getStatusColor(data.pest_risk.level)}`}
+          className={`p-6 rounded-[32px] border ${getStatusColor(data.pest_risk?.level)}`}
         >
           <div className="flex justify-between items-start mb-4">
             <div className="p-3 rounded-2xl bg-white/50 backdrop-blur-sm">
@@ -269,14 +251,14 @@ const Dashboard = ({
             <span className="text-xs font-bold uppercase tracking-wider">{t.pestRisk}</span>
           </div>
           <div className="space-y-1">
-            <h3 className="text-3xl font-serif font-bold">{data.pest_risk.level}</h3>
-            <p className="text-sm font-medium opacity-80">{data.pest_risk.active_pests[0] || 'Clear'}</p>
+            <h3 className="text-3xl font-serif font-bold">{data.pest_risk?.level || 'Low'}</h3>
+            <p className="text-sm font-medium opacity-80">{data.pest_risk?.active_pests?.[0] || 'Clear'}</p>
           </div>
         </motion.div>
       </div>
 
       {/* Animal Intrusion Alert */}
-      {data.animal_intrusion.detected && (
+      {data.animal_intrusion?.detected && (
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -286,8 +268,8 @@ const Dashboard = ({
             <ShieldAlert size={32} />
           </div>
           <div className="flex-1">
-            <h4 className="text-lg font-serif font-medium mb-1">{t.animalDetected}: {data.animal_intrusion.animal_type}</h4>
-            <p className="text-sm opacity-90">{data.animal_intrusion.recommendation}</p>
+            <h4 className="text-lg font-serif font-medium mb-1">{t.animalDetected}: {data.animal_intrusion?.animal_type || 'Unknown'}</h4>
+            <p className="text-sm opacity-90">{data.animal_intrusion?.recommendation || 'N/A'}</p>
           </div>
           <button className="px-6 py-3 bg-white text-red-600 rounded-xl font-bold text-sm hover:bg-red-50 transition-colors">
             {t.takeAction}
@@ -302,7 +284,7 @@ const Dashboard = ({
           <div className="flex justify-between items-center mb-8">
             <div>
               <h3 className="text-xl font-serif font-medium text-stone-800">{t.soilNutrients}</h3>
-              <p className="text-sm text-stone-400">{t.nutrientStatus}: {data.soil_nutrients.status}</p>
+              <p className="text-sm text-stone-400">{t.nutrientStatus}: {data.soil_nutrients?.status || 'N/A'}</p>
             </div>
           </div>
           
@@ -326,29 +308,80 @@ const Dashboard = ({
           </div>
         </div>
 
-        {/* Growth Trend Chart */}
+        {/* Smart Irrigation Gauge */}
         <div className="p-8 bg-white rounded-[40px] border border-stone-100 shadow-sm">
-          <div className="mb-8">
-            <h3 className="text-xl font-serif font-medium text-stone-800">Growth Trend</h3>
-            <p className="text-sm text-stone-400">Weekly plant height (cm)</p>
+          <div className="mb-6">
+            <h3 className="text-xl font-serif font-medium text-stone-800">Smart Irrigation Gauge</h3>
+            <p className="text-sm text-stone-400">Real-time soil moisture level</p>
           </div>
-          <div className="h-[250px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data.growth_history}>
-                <defs>
-                  <linearGradient id="colorHeight" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f5f5f5" />
-                <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{fill: '#a8a29e', fontSize: 12}} />
-                <Tooltip 
-                  contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}}
+          
+          <div className="flex flex-col items-center justify-center space-y-6">
+            <div className="relative w-48 h-48">
+              {/* Gauge Background */}
+              <svg viewBox="0 0 100 100" className="w-full h-full transform -rotate-90">
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="45"
+                  fill="none"
+                  stroke="#f5f5f4"
+                  strokeWidth="10"
+                  strokeDasharray="282.7"
+                  strokeDashoffset="70.7"
+                  strokeLinecap="round"
                 />
-                <Area type="monotone" dataKey="height" stroke="#10b981" fillOpacity={1} fill="url(#colorHeight)" strokeWidth={3} />
-              </AreaChart>
-            </ResponsiveContainer>
+                {/* Moisture Level Indicator */}
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="45"
+                  fill="none"
+                  stroke={data.soil_moisture < 30 ? '#ef4444' : data.soil_moisture < 60 ? '#f59e0b' : '#10b981'}
+                  strokeWidth="10"
+                  strokeDasharray="282.7"
+                  strokeDashoffset={282.7 - (282.7 * 0.75 * ((data.soil_moisture || 0) / 100))}
+                  strokeLinecap="round"
+                  className="transition-all duration-1000 ease-out"
+                />
+              </svg>
+              
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className={`text-4xl font-serif font-bold ${data.soil_moisture < 30 ? 'text-red-600' : data.soil_moisture < 60 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                  {data.soil_moisture || 0}%
+                </span>
+                <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Moisture</span>
+              </div>
+            </div>
+
+            <div className="w-full space-y-3">
+              <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-stone-400">
+                <span className="text-red-500">Low</span>
+                <span className="text-amber-500">Moderate</span>
+                <span className="text-emerald-500">Healthy</span>
+              </div>
+              
+              {data.soil_moisture < 30 && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-4 bg-red-50 border border-red-100 rounded-2xl flex items-center gap-3"
+                >
+                  <AlertTriangle className="text-red-600 shrink-0" size={18} />
+                  <p className="text-xs font-bold text-red-700">Low Moisture: Water crops within 24 hours.</p>
+                </motion.div>
+              )}
+
+              {data.weather.rain_next_6h > 30 && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-4 bg-sky-50 border border-sky-100 rounded-2xl flex items-center gap-3"
+                >
+                  <Cloud className="text-sky-600 shrink-0" size={18} />
+                  <p className="text-xs font-bold text-sky-700">Wait for rain, save your electricity.</p>
+                </motion.div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -423,71 +456,73 @@ const Dashboard = ({
           <h3 className="text-2xl font-serif font-medium text-stone-800">{t.cropRecs}</h3>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-          {data.recommended_crops.map((crop, i) => (
-            <motion.div 
-              key={i} 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.1 }}
-              className="p-8 bg-stone-50 rounded-[32px] border border-stone-100 hover:border-emerald-200 transition-all group"
-            >
-              <div className="flex justify-between items-start mb-6">
-                <div>
-                  <h4 className="text-2xl font-serif font-medium text-stone-900 mb-1">{crop.name}</h4>
-                  <div className="flex items-center gap-2">
-                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full uppercase tracking-widest ${
-                      crop.profit_potential === 'High' ? 'bg-emerald-100 text-emerald-700' : 
-                      crop.profit_potential === 'Medium' ? 'bg-amber-100 text-amber-700' : 'bg-stone-200 text-stone-600'
-                    }`}>
-                      {crop.profit_potential} Profit
-                    </span>
-                    <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{crop.suitability}% Match</span>
+          {(data.recommended_crops || []).map((crop, i) => (
+            crop && (
+              <motion.div 
+                key={i} 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.1 }}
+                className="p-8 bg-stone-50 rounded-[32px] border border-stone-100 hover:border-emerald-200 transition-all group"
+              >
+                <div className="flex justify-between items-start mb-6">
+                  <div>
+                    <h4 className="text-2xl font-serif font-medium text-stone-900 mb-1">{crop.name}</h4>
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full uppercase tracking-widest ${
+                        crop.profit_potential === 'High' ? 'bg-emerald-100 text-emerald-700' : 
+                        crop.profit_potential === 'Medium' ? 'bg-amber-100 text-amber-700' : 'bg-stone-200 text-stone-600'
+                      }`}>
+                        {crop.profit_potential} Profit
+                      </span>
+                      <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{crop.suitability}% Match</span>
+                    </div>
+                  </div>
+                  <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-stone-100 group-hover:scale-110 transition-transform">
+                    <Sprout className="text-emerald-600" size={24} />
                   </div>
                 </div>
-                <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-stone-100 group-hover:scale-110 transition-transform">
-                  <Sprout className="text-emerald-600" size={24} />
-                </div>
-              </div>
 
-              <div className="space-y-4 mb-6">
-                <div className="flex justify-between text-sm">
-                  <span className="text-stone-400">{t.expectedYield}</span>
-                  <span className="font-medium text-stone-800">{crop.expected_yield}</span>
+                <div className="space-y-4 mb-6">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-stone-400">{t.expectedYield}</span>
+                    <span className="font-medium text-stone-800">{crop.expected_yield}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-stone-400">{t.marketPrice}</span>
+                    <span className="font-medium text-emerald-600 font-mono">{crop.market_price}</span>
+                  </div>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-stone-400">{t.marketPrice}</span>
-                  <span className="font-medium text-emerald-600 font-mono">{crop.market_price}</span>
-                </div>
-              </div>
 
-              <div className="space-y-4">
-                <div>
-                  <p className="text-xs font-bold text-stone-400 uppercase tracking-widest mb-2">{t.whySuitable}</p>
-                  <p className="text-sm text-stone-600 leading-relaxed">{crop.reason}</p>
-                </div>
-                
-                <div className="grid grid-cols-1 gap-3 pt-4 border-t border-stone-200">
-                  <div className="flex items-start gap-3">
-                    <div className="p-1.5 bg-indigo-50 rounded-lg shrink-0">
-                      <Droplets className="text-indigo-500" size={14} />
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-xs font-bold text-stone-400 uppercase tracking-widest mb-2">{t.whySuitable}</p>
+                    <p className="text-sm text-stone-600 leading-relaxed">{crop.reason}</p>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 gap-3 pt-4 border-t border-stone-200">
+                    <div className="flex items-start gap-3">
+                      <div className="p-1.5 bg-indigo-50 rounded-lg shrink-0">
+                        <Droplets className="text-indigo-500" size={14} />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{t.irrigationAdvice}</p>
+                        <p className="text-xs text-stone-600">{crop.irrigation_advice}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{t.irrigationAdvice}</p>
-                      <p className="text-xs text-stone-600">{crop.irrigation_advice}</p>
+                    <div className="flex items-start gap-3">
+                      <div className="p-1.5 bg-amber-50 rounded-lg shrink-0">
+                        <Activity className="text-amber-500" size={14} />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{t.fertilizerAdvice}</p>
+                        <p className="text-xs text-stone-600">{crop.fertilizer_advice}</p>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-start gap-3">
-                    <div className="p-1.5 bg-amber-50 rounded-lg shrink-0">
-                      <Activity className="text-amber-500" size={14} />
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{t.fertilizerAdvice}</p>
-                      <p className="text-xs text-stone-600">{crop.fertilizer_advice}</p>
-                    </div>
-                  </div>
                 </div>
-              </div>
-            </motion.div>
+              </motion.div>
+            )
           ))}
         </div>
       </div>
@@ -519,7 +554,7 @@ const Dashboard = ({
                 </div>
               </div>
               <div className="space-y-3">
-                {data.weather.alerts.map((alert, i) => (
+                {(data.weather.alerts || []).map((alert, i) => (
                   <div key={i} className="flex items-center gap-3 p-3 bg-white/10 rounded-2xl backdrop-blur-md border border-white/10">
                     <AlertTriangle size={16} className="text-amber-400" />
                     <p className="text-xs font-medium">{alert}</p>
@@ -537,7 +572,7 @@ const Dashboard = ({
               <h3 className="text-xl font-serif font-medium">Smart Farm Advice</h3>
             </div>
             <p className="text-sm leading-relaxed opacity-90 mb-6">
-              Based on your current location in {data.weather.location_name} and the {data.weather.temp}°C temperature, we recommend monitoring for {data.disease_risk.likely_diseases[0] || 'potential threats'}. Ensure your irrigation is set for {data.irrigation.frequency}.
+              Based on your current location in {data.weather.location_name} and the {data.weather.temp}°C temperature, we recommend monitoring for {(data.disease_risk.likely_diseases || [])[0] || 'potential threats'}. Ensure your irrigation is set for {data.irrigation.frequency}.
             </p>
             <button 
               onClick={onViewAnalysis}
@@ -574,27 +609,29 @@ const Dashboard = ({
           </div>
           <div className="space-y-4">
             {(data.govt_schemes || []).map((scheme, i) => (
-              <motion.div 
-                key={i}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: i * 0.1 }}
-                className="p-4 bg-stone-50 rounded-2xl border border-stone-100 hover:border-emerald-200 transition-all"
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <h4 className="font-medium text-stone-900 text-sm">{scheme.name}</h4>
-                  <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest">{scheme.last_date}</span>
-                </div>
-                <p className="text-xs text-stone-500 mb-3 line-clamp-2">{scheme.description}</p>
-                <a 
-                  href={scheme.apply_link} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest hover:underline"
+              scheme && (
+                <motion.div 
+                  key={i}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.1 }}
+                  className="p-4 bg-stone-50 rounded-2xl border border-stone-100 hover:border-emerald-200 transition-all"
                 >
-                  Apply Now →
-                </a>
-              </motion.div>
+                  <div className="flex justify-between items-start mb-2">
+                    <h4 className="font-medium text-stone-900 text-sm">{scheme.name}</h4>
+                    <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest">{scheme.last_date}</span>
+                  </div>
+                  <p className="text-xs text-stone-500 mb-3 line-clamp-2">{scheme.description}</p>
+                  <a 
+                    href={scheme.apply_link} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest hover:underline"
+                  >
+                    Apply Now →
+                  </a>
+                </motion.div>
+              )
             ))}
           </div>
         </div>

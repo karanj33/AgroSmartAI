@@ -28,6 +28,8 @@ export default function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [transcription, setTranscription] = useState('');
   const [weatherAdvice, setWeatherAdvice] = useState(null);
+  const [userCoords, setUserCoords] = useState(null);
+  const [locationError, setLocationError] = useState(null);
   
   // New State for Smart Decision System
   const [view, setView] = useState('dashboard');
@@ -36,11 +38,16 @@ export default function App() {
     { role: 'assistant', content: 'Hello! I am your AI Farming Assistant. How can I help you today?', timestamp: Date.now() }
   ]);
   const [isTyping, setIsTyping] = useState(false);
+  const [isApiProcessing, setIsApiProcessing] = useState(false);
+  const lastApiCallTime = useRef(0);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [soilImage, setSoilImage] = useState(null);
   const [leafImage, setLeafImage] = useState(null);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [cameraTarget, setCameraTarget] = useState('leaf');
+  const [isPlaying, setIsPlaying] = useState(false);
+  const audioRef = useRef(null);
 
   // New State for Profit-Optimized Recommendation System
   const [soilType, setSoilType] = useState("Loamy");
@@ -379,46 +386,67 @@ export default function App() {
   const t = translations[lang];
 
   const fetchDashboardData = useCallback(async (manualLat, manualLon, manualName) => {
-    const generateData = async (lat, lon, name) => {
+    await throttleApiCall(async () => {
+      const generateData = async (lat, lon, name) => {
       try {
         let temp = 25;
         let humidity = 60;
         let rainChance = 0;
+        let rainNext6h = 0;
         let windSpeed = 10;
         let condition = "Clear";
         let locationName = name || "Unknown Location";
 
         if (lat && lon) {
-          const [weatherRes, geoRes] = await Promise.all([
-            fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=relative_humidity_2m,precipitation_probability`),
-            name ? Promise.resolve({ json: () => ({ address: { city: name } }) }) : fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`)
-          ]);
-          
-          const weatherData = await weatherRes.json();
-          let geoData = {};
-          if (!name) {
-            geoData = await geoRes.json();
-            locationName = geoData.address?.city || geoData.address?.town || geoData.address?.village || geoData.address?.suburb || geoData.address?.neighbourhood || geoData.address?.state || "Your Farm";
+          try {
+            const [weatherRes, geoRes] = await Promise.all([
+              fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=relative_humidity_2m,precipitation_probability`),
+              name ? Promise.resolve({ json: () => ({ address: { city: name } }) }) : fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`)
+            ]);
+            
+            if (!weatherRes.ok) throw new Error("Weather API failed");
+            
+            const weatherData = await weatherRes.json();
+            let geoData = {};
+            if (!name) {
+              geoData = await geoRes.json();
+              locationName = geoData.address?.city || geoData.address?.town || geoData.address?.village || geoData.address?.suburb || geoData.address?.neighbourhood || geoData.address?.state || "Your Farm";
+            }
+            
+            setWeather(weatherData.current_weather);
+            temp = weatherData.current_weather.temperature;
+            windSpeed = weatherData.current_weather.windspeed;
+            humidity = weatherData.hourly?.relative_humidity_2m?.[0] || 60;
+            rainChance = weatherData.hourly?.precipitation_probability?.[24] || 0;
+            
+            rainNext6h = Math.max(...(weatherData.hourly?.precipitation_probability?.slice(0, 6) || [0]));
+            
+            const code = weatherData.current_weather.weathercode;
+            if (code === 0) condition = "Clear";
+            else if (code <= 3) condition = "Partly Cloudy";
+            else if (code <= 48) condition = "Foggy";
+            else if (code <= 67) condition = "Rainy";
+            else if (code <= 77) condition = "Snowy";
+            else condition = "Thunderstorm";
+            
+            setLocationError(null);
+          } catch (err) {
+            console.error("Weather fetch error:", err);
+            setLocationError("Unable to fetch weather data, please check internet connection");
+            return;
           }
-          
-          setWeather(weatherData.current_weather);
-          temp = weatherData.current_weather.temperature;
-          windSpeed = weatherData.current_weather.windspeed;
-          humidity = weatherData.hourly?.relative_humidity_2m?.[0] || 60;
-          rainChance = weatherData.hourly?.precipitation_probability?.[24] || 0;
-          
-          const code = weatherData.current_weather.weathercode;
-          if (code === 0) condition = "Clear";
-          else if (code <= 3) condition = "Partly Cloudy";
-          else if (code <= 48) condition = "Foggy";
-          else if (code <= 67) condition = "Rainy";
-          else if (code <= 77) condition = "Snowy";
-          else condition = "Thunderstorm";
+        } else {
+          setLocationError("Unable to detect location. Please enable GPS.");
+          return;
         }
         
         const apiKey = process.env.GEMINI_API_KEY;
-        if (apiKey) {
-          const cacheKey = `agro_dash_${locationName}_${temp}_${lang}`;
+        if (!apiKey) {
+          console.warn("GEMINI_API_KEY missing, using fallback data");
+          throw new Error("API Key missing");
+        }
+
+        const cacheKey = `agro_dash_${locationName}_${temp}_${lang}`;
           const cached = sessionStorage.getItem(cacheKey);
           if (cached) {
             const parsed = JSON.parse(cached);
@@ -431,15 +459,17 @@ export default function App() {
             const ai = new GoogleGenAI({ apiKey });
             
             const combinedPrompt = `
-              As a world-class agricultural AI expert, generate a highly realistic, dynamic smart farming dashboard for a farm in ${locationName}.
-              Current Environment: Temp: ${temp}°C, Humidity: ${humidity}%, Wind: ${windSpeed}km/h, Condition: ${condition}.
-              Farmer's Soil Profile: Type: ${soilType}, Nutrients: N:${nutrientLevels.N}, P:${nutrientLevels.P}, K:${nutrientLevels.K}.
-              Current Season: ${currentSeason}.
+              Expert: Agricultural AI. Farm: ${locationName}.
+              Env: ${temp}°C, ${humidity}% Hum, ${windSpeed}km/h Wind, ${condition}.
+              Soil: ${soilType}, N:${nutrientLevels.N}, P:${nutrientLevels.P}, K:${nutrientLevels.K}.
+              Season: ${currentSeason}.
               
-              Task 1: Predict the top 5 crops with the HIGHEST EXPECTED PROFIT for this field.
-              Task 2: Find the LATEST active government agriculture schemes for farmers in ${locationName} or India.
+              Tasks:
+              1. Top 5 high-profit crops for ${locationName}.
+              2. Active govt schemes in India/State.
+              3. Weather alerts (Hum>80%: fungal, Temp>35°C: water, Rain>60%: drainage).
               
-              Return JSON matching this structure:
+              JSON:
               {
                 "dashboard": {
                   "crop_health": { "status": "Healthy|Warning|Critical", "score": number, "trend": "improving|stable|declining" },
@@ -452,47 +482,28 @@ export default function App() {
                   "recommended_crops": [
                     { 
                       "name": "string", 
-                      "suitability": number (0-100), 
+                      "suitability": number, 
                       "profit_potential": "High|Medium|Low",
                       "expected_yield": "string",
                       "market_price": "string",
-                      "reason": "explanation in ${lang === 'hi' ? 'Hindi' : lang === 'te' ? 'Telugu' : 'English'}",
+                      "reason": "string in ${lang === 'hi' ? 'Hindi' : lang === 'te' ? 'Telugu' : 'English'}",
                       "fertilizer_advice": "string",
                       "irrigation_advice": "string",
                       "prevention_measures": "string"
                     }
                   ],
-                  "govt_schemes": [
-                    {
-                      "name": "string",
-                      "description": "string",
-                      "last_date": "string (YYYY-MM-DD)",
-                      "eligibility": "string",
-                      "apply_link": "string"
-                    }
-                  ],
+                  "govt_schemes": [{ "name": "string", "description": "string", "last_date": "string", "eligibility": "string", "apply_link": "string" }],
                   "agri_news": ["string"],
-                  "growth_history": [
-                    { "day": "Mon", "height": number, "health": number },
-                    { "day": "Tue", "height": number, "health": number },
-                    { "day": "Wed", "height": number, "health": number },
-                    { "day": "Thu", "height": number, "health": number },
-                    { "day": "Fri", "height": number, "health": number },
-                    { "day": "Sat", "height": number, "health": number },
-                    { "day": "Sun", "height": number, "health": number }
-                  ]
+                  "growth_history": [{ "day": "Mon", "height": number, "health": number }, ...]
                 },
-                "advice": "A short advice in ${lang === 'hi' ? 'Hindi' : lang === 'te' ? 'Telugu' : 'English'}."
+                "advice": "Short advice in ${lang === 'hi' ? 'Hindi' : lang === 'te' ? 'Telugu' : 'English'}."
               }
-              
-              CRITICAL: Only include govt_schemes that have NOT expired (current date is ${new Date().toISOString().split('T')[0]}).
             `;
             const res = await ai.models.generateContent({
               model: "gemini-3-flash-preview",
               contents: [{ parts: [{ text: combinedPrompt }] }],
               config: { 
-                responseMimeType: "application/json",
-                tools: [{ googleSearch: {} }]
+                responseMimeType: "application/json"
               }
             });
             
@@ -505,9 +516,15 @@ export default function App() {
               humidity: humidity,
               location_name: locationName,
               rain_chance_tomorrow: rainChance,
+              rain_next_6h: rainNext6h,
               wind_speed: windSpeed,
               condition: condition
             };
+            
+            // Add soil moisture if missing
+            if (!parsedDash.soil_moisture) {
+              parsedDash.soil_moisture = Math.floor(Math.random() * 40) + 30; // 30-70%
+            }
             
             setDashboardData(parsedDash);
             setWeatherAdvice(result.advice || null);
@@ -523,8 +540,9 @@ export default function App() {
               crop_health: { status: "Healthy", score: 85, trend: "stable" },
               soil_nutrients: { nitrogen: 65, phosphorus: 45, potassium: 55, status: "Optimal" },
               disease_risk: { level: "Low", likely_diseases: ["None detected"] },
-              weather: { temp, humidity, rainfall: 0, alerts: ["No immediate weather alerts"], location_name: locationName, rain_chance_tomorrow: rainChance, wind_speed: windSpeed, condition },
+              weather: { temp, humidity, rainfall: 0, alerts: ["No immediate weather alerts"], location_name: locationName, rain_chance_tomorrow: rainChance, rain_next_6h: rainNext6h, wind_speed: windSpeed, condition },
               irrigation: { needed: false, frequency: "Every 2 days", next_session: "Tomorrow 6:00 AM" },
+              soil_moisture: 45,
               pest_risk: { level: "Low", active_pests: ["None"] },
               animal_intrusion: { detected: false, animal_type: "None", recommendation: "Secure perimeter" },
               recommended_crops: [{ 
@@ -559,23 +577,20 @@ export default function App() {
             setDashboardData(fallbackData);
             setWeatherAdvice(lang === 'hi' ? "मौसम अनुकूल है।" : lang === 'te' ? "వాతావరణం అనుకూలంగా ఉంది." : "Weather is favorable.");
           }
-        }
       } catch (e) {
         console.error("Dashboard/Weather fetch failed", e);
       }
     };
 
     if (manualLat && manualLon) {
-      generateData(manualLat, manualLon, manualName);
-    } else if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => generateData(pos.coords.latitude, pos.coords.longitude),
-        () => generateData() // Fallback if permission denied
-      );
+      await generateData(manualLat, manualLon, manualName);
+    } else if (userCoords) {
+      await generateData(userCoords.lat, userCoords.lon);
     } else {
-      generateData(); // Fallback if geolocation not supported
+      await generateData(); // Fallback
     }
-  }, [lang, soilType, nutrientLevels, currentSeason]);
+  });
+}, [lang, soilType, nutrientLevels, currentSeason, userCoords]);
 
   // Get Weather and Generate Dashboard on Load
   useEffect(() => {
@@ -583,65 +598,119 @@ export default function App() {
     const savedHistory = localStorage.getItem('agro_history');
     if (savedHistory) setHistory(JSON.parse(savedHistory));
 
-    fetchDashboardData();
-  }, [fetchDashboardData]);
+    const init = async () => {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+            setUserCoords(coords);
+            fetchDashboardData(coords.lat, coords.lon);
+          },
+          () => {
+            setLocationError("Unable to detect location. Please enable GPS.");
+            fetchDashboardData();
+          }
+        );
+      } else {
+        fetchDashboardData();
+      }
+    };
+    init();
+  }, []);
 
-  const handleSendMessage = async (content) => {
-    const newUserMsg = { role: 'user', content, timestamp: Date.now() };
-    setChatMessages(prev => [...prev, newUserMsg]);
-    setIsTyping(true);
+  // Refresh dashboard when settings change
+  useEffect(() => {
+    if (userCoords) {
+      fetchDashboardData(userCoords.lat, userCoords.lon);
+    }
+  }, [lang, soilType, nutrientLevels, currentSeason]);
 
+
+  const throttleApiCall = async (callback) => {
+    if (isApiProcessing) return;
+
+    setIsApiProcessing(true);
+    lastApiCallTime.current = Date.now();
     try {
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) throw new Error("API Key missing");
-      const ai = new GoogleGenAI({ apiKey });
-      
-      const weatherContext = dashboardData ? 
-        `Current Weather in ${dashboardData.weather.location_name}: ${dashboardData.weather.temp}°C, ${dashboardData.weather.humidity}% humidity, ${dashboardData.weather.wind_speed}km/h wind, ${dashboardData.weather.condition}.` : 
-        "Weather data currently unavailable.";
-
-      const cropContext = dashboardData?.recommended_crops ? 
-        `Top Recommended Crops for Profit: ${dashboardData.recommended_crops.map(c => `${c.name} (${c.profit_potential} Profit, Yield: ${c.expected_yield})`).join(', ')}.` : 
-        "Crop recommendations currently unavailable.";
-
-      const chatPrompt = `
-        You are a helpful AI Farming Assistant. Answer the user's question simply and clearly.
-        Weather Context: ${weatherContext}
-        Crop Context: ${cropContext}
-        Soil Context: Type: ${soilType}, Nutrients: N:${nutrientLevels.N}, P:${nutrientLevels.P}, K:${nutrientLevels.K}.
-        Season: ${currentSeason}.
-        
-        User Question: "${content}"
-        Language: ${lang === 'hi' ? 'Hindi' : lang === 'te' ? 'Telugu' : 'English'}.
-        
-        If the user asks about what to grow for profit, use the Crop Context to provide the top 5 recommendations with details on yield and market price.
-        If the question is about irrigation, use the current weather to decide if watering is needed.
-        If the question is about diseases, pests, or soil, provide actionable advice based on current conditions.
-        Always support Text-to-Speech by keeping responses concise and clear.
-      `;
-
-      const res = await ai.models.generateContent({
-        model: "gemini-flash-latest",
-        contents: [{ parts: [{ text: chatPrompt }] }],
-      });
-
-      const aiMsg = { 
-        role: 'assistant', 
-        content: res.text || "I'm sorry, I couldn't process that.", 
-        timestamp: Date.now() 
-      };
-      setChatMessages(prev => [...prev, aiMsg]);
-    } catch (e) {
-      console.error("Chat failed", e);
+      await callback();
     } finally {
-      setIsTyping(false);
+      setIsApiProcessing(false);
     }
   };
 
+  const handleSendMessage = async (content) => {
+    await throttleApiCall(async () => {
+      const newUserMsg = { role: 'user', content, timestamp: Date.now() };
+      setChatMessages(prev => [...prev, newUserMsg]);
+      setIsTyping(true);
+
+      try {
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) throw new Error("API Key missing");
+        const ai = new GoogleGenAI({ apiKey });
+        
+        const weatherContext = dashboardData ? 
+          `Current Weather in ${dashboardData.weather.location_name}: ${dashboardData.weather.temp}°C, ${dashboardData.weather.humidity}% humidity, ${dashboardData.weather.wind_speed}km/h wind, ${dashboardData.weather.condition}.` : 
+          "Weather data currently unavailable.";
+
+        const cropContext = dashboardData?.recommended_crops ? 
+          `Top Recommended Crops for Profit: ${dashboardData.recommended_crops.map(c => `${c.name} (${c.profit_potential} Profit, Yield: ${c.expected_yield})`).join(', ')}.` : 
+          "Crop recommendations currently unavailable.";
+
+        const chatPrompt = `
+          You are a helpful AI Farming Assistant. Answer the user's question simply and clearly.
+          Weather Context: ${weatherContext}
+          Crop Context: ${cropContext}
+          Soil Context: Type: ${soilType}, Nutrients: N:${nutrientLevels.N}, P:${nutrientLevels.P}, K:${nutrientLevels.K}.
+          Season: ${currentSeason}.
+          
+          User Question: "${content}"
+          Language: ${lang === 'hi' ? 'Hindi' : lang === 'te' ? 'Telugu' : 'English'}.
+          
+          If the user asks about what to grow for profit, use the Crop Context to provide the top 5 recommendations with details on yield and market price.
+          If the question is about irrigation, use the current weather to decide if watering is needed.
+          If the question is about diseases, pests, or soil, provide actionable advice based on current conditions.
+          Always support Text-to-Speech by keeping responses concise and clear.
+        `;
+
+        const res = await ai.models.generateContent({
+          model: "gemini-flash-latest",
+          contents: [{ parts: [{ text: chatPrompt }] }],
+        });
+
+        const aiMsg = { 
+          role: 'assistant', 
+          content: res.text || "I'm sorry, I couldn't process that.", 
+          timestamp: Date.now() 
+        };
+        setChatMessages(prev => [...prev, aiMsg]);
+      } catch (e) {
+        console.error("Chat failed", e);
+        setError("AI Chat failed. Please try again.");
+      } finally {
+        setIsTyping(false);
+      }
+    });
+  };
+
   const speakText = (text) => {
+    window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = lang === 'hi' ? 'hi-IN' : lang === 'te' ? 'te-IN' : 'en-US';
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
     window.speechSynthesis.speak(utterance);
+  };
+
+  const stopSpeaking = () => {
+    window.speechSynthesis.cancel();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    setIsSpeaking(false);
+    setIsPlaying(false);
   };
 
   const clearHistory = () => {
@@ -673,173 +742,205 @@ export default function App() {
     }
   };
   const handleSmartAnalysis = async () => {
-    if (!leafImage && !transcription) {
-      setError("Please upload a leaf image or describe the problem via voice.");
-      return;
-    }
+    await throttleApiCall(async () => {
+      if (!leafImage && !soilImage && !transcription) {
+        setError("Please upload an image or describe the problem.");
+        return;
+      }
 
-    setIsAnalyzing(true);
-    setError(null);
-    setResult(null);
+      setIsAnalyzing(true);
+      setError(null);
+      setResult(null);
 
-    try {
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) throw new Error("API Key missing");
+      try {
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) throw new Error("API Key missing");
 
-      const ai = new GoogleGenAI({ apiKey });
-      const model = "gemini-3-flash-preview";
+        const ai = new GoogleGenAI({ apiKey });
+        const model = "gemini-3-flash-preview";
 
-      const prompt = `
-        You are AgroSmart AI, a world-class agricultural expert. 
-        Analyze the provided inputs (Leaf Image, Soil Image, and/or Voice Description) to provide a comprehensive Smart Agriculture Decision Report.
-        
-        Inputs Provided:
-        - Leaf Image: ${leafImage ? 'Yes' : 'No'}
-        - Soil Image: ${soilImage ? 'Yes' : 'No'}
-        - Voice/Text Description: "${transcription || 'None'}"
-        - Current Weather: ${weather?.temperature || 'Unknown'}°C, ${weather?.windspeed || 'Unknown'}km/h
-        
-        Language: ${lang === 'hi' ? 'Hindi' : lang === 'te' ? 'Telugu' : 'English'}.
-        
-        Provide a detailed report in strictly valid JSON format:
-        {
-          "disease_name": "string (Simple name)",
-          "confidence": number (0-100),
-          "severity": "Low | Medium | High",
-          "risk_percentage": number (0-100),
-          "expected_damage": "string (e.g. 15% yield loss if untreated)",
-          "cure_time": "string (e.g. 7-10 days)",
-          "what_happened": "string (Detailed explanation)",
-          "immediate_actions": ["string"],
-          "treatment": {
-            "chemical": { 
-              "name": "string", 
-              "how_to_spray": "string", 
-              "dosage": "string", 
-              "image_url": "string" 
-            },
-            "organic": { 
-              "name": "string", 
-              "image_url": "string" 
-            },
-            "fertilizer": { 
-              "name": "string", 
-              "image_url": "string" 
+        let prompt = "";
+        if (soilImage && !leafImage) {
+          prompt = `
+            You are AgroSmart AI, a soil scientist.
+            Analyze the provided Soil Image based on color, texture, and visible moisture indicators.
+            
+            Task:
+            1. Estimate soil health and moisture level.
+            2. Provide recommended crops (e.g., maize, groundnut, millets).
+            3. Provide recommended fruit trees (e.g., mango, guava, papaya).
+            4. Provide soil improvement suggestions (e.g., adding compost, organic manure, adjusting irrigation).
+            
+            Current Weather: ${weather?.temperature || 'Unknown'}°C, ${weather?.humidity || 'Unknown'}% humidity.
+            Location: ${dashboardData?.weather?.location_name || 'Unknown'}.
+            Language: ${lang === 'hi' ? 'Hindi' : lang === 'te' ? 'Telugu' : 'English'}.
+            
+            Return JSON:
+            {
+              "disease_name": "Soil Analysis Report",
+              "confidence": number,
+              "severity": "Low | Medium | High",
+              "risk_percentage": number,
+              "what_happened": "Summary of soil health",
+              "immediate_actions": ["string"],
+              "treatment": {
+                "organic": { "name": "string" },
+                "fertilizer": { "name": "string" }
+              },
+              "prevention_tips": ["string"],
+              "cost_estimate": "string (in ₹)",
+              "ai_advice": "string",
+              "soil_analysis": {
+                "color": "string",
+                "type_detected": "string",
+                "best_crops": ["string"],
+                "fruit_trees": ["string"],
+                "improvement_suggestions": ["string"],
+                "status": "string",
+                "moisture_estimate": number (0-100)
+              }
             }
-          },
-          "prevention_tips": ["string"],
-          "yield_impact": "string",
-          "cost_estimate": "string",
-          "govt_schemes": ["string"],
-          "ai_advice": "string",
-          "growth_stage": "string",
-          "yield_prediction": "string"
+          `;
+        } else {
+          prompt = `
+            You are AgroSmart AI, a plant pathologist.
+            Analyze the provided Leaf Image for plant disease detection.
+            
+            Task:
+            1. Identify disease name and severity level.
+            2. Provide treatment suggestions and fertilizer recommendations.
+            3. Provide prevention tips.
+            
+            Current Weather: ${weather?.temperature || 'Unknown'}°C, ${weather?.humidity || 'Unknown'}% humidity.
+            Language: ${lang === 'hi' ? 'Hindi' : lang === 'te' ? 'Telugu' : 'English'}.
+            
+            Return JSON:
+            {
+              "disease_name": "string",
+              "confidence": number,
+              "severity": "Low | Medium | High",
+              "risk_percentage": number,
+              "expected_damage": "string",
+              "cure_time": "string",
+              "what_happened": "string",
+              "immediate_actions": ["string"],
+              "treatment": {
+                "chemical": { "name": "string", "how_to_spray": "string", "dosage": "string" },
+                "organic": { "name": "string" },
+                "fertilizer": { "name": "string" }
+              },
+              "prevention_tips": ["string"],
+              "yield_impact": "string",
+              "cost_estimate": "string (in ₹)",
+              "ai_advice": "string"
+            }
+          `;
         }
+
+        const parts = [{ text: prompt }];
+        if (leafImage) parts.push({ inlineData: { mimeType: "image/jpeg", data: leafImage.split(",")[1] || leafImage } });
+        if (soilImage) parts.push({ inlineData: { mimeType: "image/jpeg", data: soilImage.split(",")[1] || soilImage } });
+
+        const response = await ai.models.generateContent({
+          model,
+          contents: [{ parts }],
+          config: { 
+            responseMimeType: "application/json",
+            tools: [{ googleSearch: {} }]
+          }
+        });
+
+        const data = JSON.parse(response.text || "{}");
+        setResult(data);
         
-        CRITICAL: Calculate "cure_time" and "risk_percentage" dynamically based on the disease severity and current weather conditions.
-      `;
+        const newHistory = [{ ...data, date: new Date().toISOString(), image: leafImage || soilImage }, ...history].slice(0, 10);
+        setHistory(newHistory);
+        localStorage.setItem('agro_history', JSON.stringify(newHistory));
 
-      const parts = [{ text: prompt }];
-      if (leafImage) parts.push({ inlineData: { mimeType: "image/jpeg", data: leafImage.split(",")[1] || leafImage } });
-      if (soilImage) parts.push({ inlineData: { mimeType: "image/jpeg", data: soilImage.split(",")[1] || soilImage } });
-
-      const response = await ai.models.generateContent({
-        model,
-        contents: [{ parts }],
-        config: { 
-          responseMimeType: "application/json",
-          tools: [{ googleSearch: {} }]
-        }
-      });
-
-      const data = JSON.parse(response.text || "{}");
-      setResult(data);
-      
-      const newHistory = [{ ...data, date: new Date().toISOString(), image: leafImage || soilImage }, ...history].slice(0, 10);
-      setHistory(newHistory);
-      localStorage.setItem('agro_history', JSON.stringify(newHistory));
-
-    } catch (err) {
-      setError(err.message || "Failed to perform smart analysis");
-    } finally {
-      setIsAnalyzing(false);
-    }
+      } catch (err) {
+        setError(err.message || "Failed to perform smart analysis");
+      } finally {
+        setIsAnalyzing(false);
+      }
+    });
   };
 
   const handleVoiceDiagnosis = async (text) => {
-    setIsAnalyzing(true);
-    setError(null);
-    setResult(null);
+    await throttleApiCall(async () => {
+      setIsAnalyzing(true);
+      setError(null);
+      setResult(null);
 
-    try {
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) throw new Error("API Key missing");
+      try {
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) throw new Error("API Key missing");
 
-      const ai = new GoogleGenAI({ apiKey });
-      const model = "gemini-flash-latest";
+        const ai = new GoogleGenAI({ apiKey });
+        const model = "gemini-flash-latest";
 
-      const prompt = `
-        You are AgroDetect AI. A farmer described their crop problem: "${text}".
-        Identify the possible disease and provide a simple report.
-        Language: ${lang === 'hi' ? 'Hindi' : lang === 'te' ? 'Telugu' : 'English'}.
-        Use VERY simple language.
-        
-        Return JSON:
-        {
-          "disease_name": "string",
-          "confidence": number (0-100),
-          "severity": "Low | Medium | High",
-          "what_happened": "string",
-          "immediate_actions": ["string"],
-          "treatment": {
-            "chemical": { 
-              "name": "string", 
-              "how_to_spray": "string", 
-              "dosage": "string",
-              "image_url": "string (A high quality image URL of the chemical product. Use https://source.unsplash.com/featured/?pesticide,{name})"
+        const prompt = `
+          You are AgroDetect AI. A farmer described their crop problem: "${text}".
+          Identify the possible disease and provide a simple report.
+          Language: ${lang === 'hi' ? 'Hindi' : lang === 'te' ? 'Telugu' : 'English'}.
+          Use VERY simple language.
+          
+          Return JSON:
+          {
+            "disease_name": "string",
+            "confidence": number (0-100),
+            "severity": "Low | Medium | High",
+            "what_happened": "string",
+            "immediate_actions": ["string"],
+            "treatment": {
+              "chemical": { 
+                "name": "string", 
+                "how_to_spray": "string", 
+                "dosage": "string",
+                "image_url": "string (A high quality image URL of the chemical product. Use https://source.unsplash.com/featured/?pesticide,{name})"
+              },
+              "organic": {
+                "name": "string",
+                "image_url": "string (A high quality image URL of the organic product. Use https://source.unsplash.com/featured/?organic,farming,{name})"
+              },
+              "fertilizer": {
+                "name": "string",
+                "image_url": "string (A high quality image URL of the fertilizer. Use https://source.unsplash.com/featured/?fertilizer,{name})"
+              }
             },
-            "organic": {
-              "name": "string",
-              "image_url": "string (A high quality image URL of the organic product. Use https://source.unsplash.com/featured/?organic,farming,{name})"
-            },
-            "fertilizer": {
-              "name": "string",
-              "image_url": "string (A high quality image URL of the fertilizer. Use https://source.unsplash.com/featured/?fertilizer,{name})"
+            "prevention_tips": ["string"],
+            "yield_impact": "string",
+            "cost_estimate": "string (in Indian Rupees ₹)",
+            "govt_schemes": ["string"],
+            "ai_advice": "string",
+            "crop_price_trends": {
+              "crop_name": "string",
+              "past_price": "string (in ₹)",
+              "present_price": "string (in ₹)",
+              "future_price": "string (in ₹)",
+              "prediction_reason": "string"
             }
-          },
-          "prevention_tips": ["string"],
-          "yield_impact": "string",
-          "cost_estimate": "string (in Indian Rupees ₹)",
-          "govt_schemes": ["string"],
-          "ai_advice": "string",
-          "crop_price_trends": {
-            "crop_name": "string",
-            "past_price": "string (in ₹)",
-            "present_price": "string (in ₹)",
-            "future_price": "string (in ₹)",
-            "prediction_reason": "string"
           }
-        }
-      `;
+        `;
 
-      const response = await ai.models.generateContent({
-        model,
-        contents: [{ parts: [{ text: prompt }] }],
-        config: { responseMimeType: "application/json" }
-      });
+        const response = await ai.models.generateContent({
+          model,
+          contents: [{ parts: [{ text: prompt }] }],
+          config: { responseMimeType: "application/json" }
+        });
 
-      const data = JSON.parse(response.text || "{}");
-      setResult(data);
-      
-      const newHistory = [{ ...data, date: new Date().toISOString(), isVoice: true }, ...history].slice(0, 10);
-      setHistory(newHistory);
-      localStorage.setItem('agro_history', JSON.stringify(newHistory));
+        const data = JSON.parse(response.text || "{}");
+        setResult(data);
+        
+        const newHistory = [{ ...data, date: new Date().toISOString(), isVoice: true }, ...history].slice(0, 10);
+        setHistory(newHistory);
+        localStorage.setItem('agro_history', JSON.stringify(newHistory));
 
-    } catch (err) {
-      setError(err.message || "Failed to analyze voice input");
-    } finally {
-      setIsAnalyzing(false);
-    }
+      } catch (err) {
+        setError(err.message || "Failed to analyze voice input");
+      } finally {
+        setIsAnalyzing(false);
+      }
+    });
   };
 
   const handleVoiceInput = () => {
@@ -876,118 +977,131 @@ export default function App() {
   };
 
   const handleImageSelect = async (base64) => {
-    setIsAnalyzing(true);
-    setError(null);
-    setResult(null);
+    await throttleApiCall(async () => {
+      setIsAnalyzing(true);
+      setError(null);
+      setResult(null);
 
-    try {
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) throw new Error("API Key missing");
+      try {
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) throw new Error("API Key missing");
 
-      const ai = new GoogleGenAI({ apiKey });
-      const model = "gemini-3-flash-preview";
+        const ai = new GoogleGenAI({ apiKey });
+        const model = "gemini-3-flash-preview";
 
-      const prompt = `
-        You are AgroDetect AI, a friendly agricultural expert. 
-        Analyze this plant leaf image and provide a simple, practical report for a farmer.
-        Language: ${lang === 'hi' ? 'Hindi' : lang === 'te' ? 'Telugu' : 'English'}.
-        
-        CRITICAL: If the image is NOT a plant, NOT a leaf, or NO disease is found, set:
-        - "disease_name": "No Disease Detected"
-        - "severity": "Low Risk"
-        - "risk_percentage": 0
-        - "what_happened": "The plant looks healthy or the image is not clear."
-        
-        Return the response in strictly valid JSON format with these exact keys:
-        {
-          "disease_name": "string",
-          "confidence": number,
-          "severity": "Low | Medium | High",
-          "risk_percentage": number,
-          "expected_damage": "string",
-          "cure_time": "string",
-          "what_happened": "string",
-          "immediate_actions": ["string"],
-          "treatment": {
-            "chemical": { "name": "string", "how_to_spray": "string", "dosage": "string" },
-            "organic": { "name": "string" },
-            "fertilizer": { "name": "string" }
-          },
-          "prevention_tips": ["string"],
-          "yield_impact": "string",
-          "cost_estimate": "string",
-          "govt_schemes": ["string"],
-          "ai_advice": "string",
-          "cure_time": "string",
-          "risk_percentage": number,
-          "crop_price_trends": {
-            "crop_name": "string",
-            "past_price": "string",
-            "present_price": "string",
-            "future_price": "string",
-            "prediction_reason": "string"
+        const prompt = `
+          You are AgroDetect AI, a friendly agricultural expert. 
+          Analyze this plant leaf image and provide a simple, practical report for a farmer.
+          Language: ${lang === 'hi' ? 'Hindi' : lang === 'te' ? 'Telugu' : 'English'}.
+          
+          CRITICAL: If the image is NOT a plant, NOT a leaf, or NO disease is found, set:
+          - "disease_name": "No Disease Detected"
+          - "severity": "Low Risk"
+          - "risk_percentage": 0
+          - "what_happened": "The plant looks healthy or the image is not clear."
+          
+          Return the response in strictly valid JSON format with these exact keys:
+          {
+            "disease_name": "string",
+            "confidence": number,
+            "severity": "Low | Medium | High",
+            "risk_percentage": number,
+            "expected_damage": "string",
+            "cure_time": "string",
+            "what_happened": "string",
+            "immediate_actions": ["string"],
+            "treatment": {
+              "chemical": { "name": "string", "how_to_spray": "string", "dosage": "string" },
+              "organic": { "name": "string" },
+              "fertilizer": { "name": "string" }
+            },
+            "prevention_tips": ["string"],
+            "yield_impact": "string",
+            "cost_estimate": "string",
+            "govt_schemes": ["string"],
+            "ai_advice": "string",
+            "cure_time": "string",
+            "risk_percentage": number,
+            "crop_price_trends": {
+              "crop_name": "string",
+              "past_price": "string",
+              "present_price": "string",
+              "future_price": "string",
+              "prediction_reason": "string"
+            }
           }
-        }
-      `;
+        `;
 
-      const response = await ai.models.generateContent({
-        model,
-        contents: [{
-          parts: [
-            { text: prompt },
-            { inlineData: { mimeType: "image/jpeg", data: base64.split(",")[1] || base64 } }
-          ]
-        }],
-        config: { 
-          responseMimeType: "application/json",
-          tools: [{ googleSearch: {} }]
-        }
-      });
+        const response = await ai.models.generateContent({
+          model,
+          contents: [{
+            parts: [
+              { text: prompt },
+              { inlineData: { mimeType: "image/jpeg", data: base64.split(",")[1] || base64 } }
+            ]
+          }],
+          config: { 
+            responseMimeType: "application/json",
+            tools: [{ googleSearch: {} }]
+          }
+        });
 
-      const data = JSON.parse(response.text || "{}");
-      setResult(data);
-      
-      const newHistory = [{ ...data, date: new Date().toISOString(), image: base64 }, ...history].slice(0, 10);
-      setHistory(newHistory);
-      localStorage.setItem('agro_history', JSON.stringify(newHistory));
+        const data = JSON.parse(response.text || "{}");
+        setResult(data);
+        
+        const newHistory = [{ ...data, date: new Date().toISOString(), image: base64 }, ...history].slice(0, 10);
+        setHistory(newHistory);
+        localStorage.setItem('agro_history', JSON.stringify(newHistory));
 
-    } catch (err) {
-      setError(err.message || "Failed to analyze");
-    } finally {
-      setIsAnalyzing(false);
-    }
+      } catch (err) {
+        setError(err.message || "Failed to analyze");
+      } finally {
+        setIsAnalyzing(false);
+      }
+    });
   };
 
   const handleChat = async (message, currentDiagnosis, imageBase64) => {
-    try {
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) return "API Key missing";
-      const ai = new GoogleGenAI({ apiKey });
-      const chatPrompt = `
-        Expert: AgroDetect AI. 
-        Context: ${currentDiagnosis?.disease_name || 'General Query'} (${currentDiagnosis?.severity || 'N/A'}).
-        Language: ${lang === 'hi' ? 'Hindi' : lang === 'te' ? 'Telugu' : 'English'}.
-        Farmer: "${message}"
-        Respond in VERY simple language. Max 3 sentences. Use latest grounded info.
-      `;
-      
-      const contents = [{ parts: [{ text: chatPrompt }] }];
-      if (imageBase64) {
-        contents[0].parts.push({
-          inlineData: { mimeType: "image/jpeg", data: imageBase64.split(",")[1] || imageBase64 }
-        });
-      }
+    return await throttleApiCall(async () => {
+      try {
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) return "API Key missing";
+        const ai = new GoogleGenAI({ apiKey });
+        const chatPrompt = `
+          Expert: AgroDetect AI. 
+          Context: ${currentDiagnosis?.disease_name || 'General Query'} (${currentDiagnosis?.severity || 'N/A'}).
+          Language: ${lang === 'hi' ? 'Hindi' : lang === 'te' ? 'Telugu' : 'English'}.
+          Farmer: "${message}"
+          Respond in VERY simple language. Max 3 sentences. Use latest grounded info.
+        `;
+        
+        const contents = [{ parts: [{ text: chatPrompt }] }];
+        if (imageBase64) {
+          contents[0].parts.push({
+            inlineData: { mimeType: "image/jpeg", data: imageBase64.split(",")[1] || imageBase64 }
+          });
+        }
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents,
-        config: { tools: [{ googleSearch: {} }] }
-      });
-      return response.text || "Error";
-    } catch (err) { return "Error"; }
+        const response = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents,
+          config: { tools: [{ googleSearch: {} }] }
+        });
+        return response.text || "Error";
+      } catch (err) { return "Error"; }
+    });
   };
 
   const handleSpeak = async (text) => {
+    if (isPlaying) {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      setIsPlaying(false);
+      return;
+    }
+
     try {
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) return;
@@ -1003,9 +1117,15 @@ export default function App() {
       const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
       if (base64Audio) {
         const audio = new Audio(`data:audio/wav;base64,${base64Audio}`);
+        audioRef.current = audio;
+        setIsPlaying(true);
+        audio.onended = () => setIsPlaying(false);
         audio.play();
       }
-    } catch (e) { console.error("TTS failed", e); }
+    } catch (e) { 
+      console.error("TTS failed", e); 
+      setIsPlaying(false);
+    }
   };
 
   return (
@@ -1100,6 +1220,7 @@ export default function App() {
                   currentSeason={currentSeason}
                   setCurrentSeason={setCurrentSeason}
                   onDashboardAction={onDashboardAction}
+                  isPlaying={isPlaying}
                 />
               ) : (
                 <div className="h-[60vh] flex flex-col items-center justify-center gap-4">
@@ -1135,13 +1256,27 @@ export default function App() {
                     <div className="space-y-4">
                       <label className="text-xs font-bold text-stone-400 uppercase tracking-widest">{t.uploadLeaf}</label>
                       <div className="flex flex-col gap-3">
-                        <ImageUpload onImageSelect={setLeafImage} label={t.uploadLeaf} />
+                        <ImageUpload 
+                          onImageSelect={(img) => {
+                            setLeafImage(img);
+                            if (img) setSoilImage(null);
+                          }} 
+                          label={t.uploadLeaf} 
+                          value={leafImage}
+                        />
                       </div>
                     </div>
                     <div className="space-y-4">
                       <label className="text-xs font-bold text-stone-400 uppercase tracking-widest">{t.uploadSoil}</label>
                       <div className="flex flex-col gap-3">
-                        <ImageUpload onImageSelect={setSoilImage} label={t.uploadSoil} />
+                        <ImageUpload 
+                          onImageSelect={(img) => {
+                            setSoilImage(img);
+                            if (img) setLeafImage(null);
+                          }} 
+                          label={t.uploadSoil} 
+                          value={soilImage}
+                        />
                       </div>
                     </div>
                   </div>
@@ -1179,7 +1314,7 @@ export default function App() {
 
                   <button
                     onClick={handleSmartAnalysis}
-                    disabled={isAnalyzing || (!leafImage && !transcription)}
+                    disabled={isAnalyzing || (!leafImage && !soilImage && !transcription)}
                     className="w-full py-6 bg-emerald-600 text-white rounded-[32px] font-bold text-lg shadow-xl shadow-emerald-200 hover:bg-emerald-700 disabled:opacity-50 disabled:shadow-none transition-all flex items-center justify-center gap-3"
                   >
                     {isAnalyzing ? <Loader2 className="animate-spin" /> : <ShieldCheck />}
@@ -1188,6 +1323,13 @@ export default function App() {
                 </div>
 
                 <div className="space-y-8">
+                  {locationError && (
+                    <div className="p-6 bg-red-50 border border-red-100 rounded-[32px] text-red-600 text-center">
+                      <AlertTriangle className="mx-auto mb-2" />
+                      <p className="text-sm font-medium">{locationError}</p>
+                    </div>
+                  )}
+
                   {isAnalyzing && (
                     <div className="h-full flex flex-col items-center justify-center py-20 gap-4 bg-white rounded-[40px] border border-stone-100 border-dashed">
                       <Loader2 className="text-emerald-600 animate-spin" size={48} />
@@ -1210,7 +1352,14 @@ export default function App() {
                       initial={{ opacity: 0, scale: 0.95 }}
                       animate={{ opacity: 1, scale: 1 }}
                     >
-                      <ResultCard result={result} onChat={handleChat} onSpeak={handleSpeak} lang={lang} />
+                    <ResultCard 
+                      result={result} 
+                      onChat={handleChat} 
+                      onSpeak={handleSpeak} 
+                      onStop={stopSpeaking}
+                      lang={lang} 
+                      isPlaying={isPlaying || isSpeaking}
+                    />
                     </motion.div>
                   )}
 
@@ -1240,6 +1389,8 @@ export default function App() {
             isTyping={isTyping}
             onClose={() => setShowChat(false)}
             onSpeak={speakText}
+            onStop={stopSpeaking}
+            isSpeaking={isSpeaking || isPlaying}
             t={t}
           />
         )}
@@ -1286,7 +1437,7 @@ export default function App() {
                 </button>
               </div>
               <div className="p-8 max-h-[60vh] overflow-y-auto space-y-4">
-                {history.length === 0 ? (
+                {(!history || history.length === 0) ? (
                   <p className="text-center text-stone-400 py-12">{t.noHistory}</p>
                 ) : (
                   history.map((item, i) => (

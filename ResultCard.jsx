@@ -11,7 +11,7 @@ import {
   CartesianGrid, Tooltip, Cell, PieChart, Pie
 } from 'recharts';
 
-export const ResultCard = ({ result, onChat, onSpeak, lang }) => {
+export const ResultCard = ({ result, onChat, onSpeak, onStop, lang, isPlaying }) => {
   const [chatMessages, setChatMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [selectedImage, setSelectedImage] = useState(null);
@@ -22,6 +22,7 @@ export const ResultCard = ({ result, onChat, onSpeak, lang }) => {
   const translations = {
     en: {
       listen: "Listen to Advisor",
+      stop: "Stop",
       voice: "AgroDetect AI Voice",
       whatHappened: "What Happened To My Plant?",
       immediateActions: "What Should I Do Now?",
@@ -53,6 +54,7 @@ export const ResultCard = ({ result, onChat, onSpeak, lang }) => {
     },
     hi: {
       listen: "सलाहकार को सुनें",
+      stop: "बंद करें",
       voice: "AgroDetect AI आवाज़",
       whatHappened: "मेरे पौधे को क्या हुआ?",
       immediateActions: "अब मुझे क्या करना चाहिए?",
@@ -60,7 +62,7 @@ export const ResultCard = ({ result, onChat, onSpeak, lang }) => {
       chemical: "रासायनिक स्प्रे",
       organic: "जैविक समाधान",
       fertilizer: "उर्वरक सहायता",
-      prevention: "भవిष्य की रोकथाम",
+      prevention: "भविष्य की रोकथाम",
       impact: "उपज पर प्रभाव",
       cost: "उपचार लागत",
       schemes: "सरकारी योजनाएं (भारत)",
@@ -84,6 +86,7 @@ export const ResultCard = ({ result, onChat, onSpeak, lang }) => {
     },
     te: {
       listen: "సలహాదారుని వినండి",
+      stop: "ఆపు",
       voice: "AgroDetect AI వాయిస్",
       whatHappened: "నా మొక్కకు ఏమైంది?",
       immediateActions: "నేను ఇప్పుడు ఏమి చేయాలి?",
@@ -118,13 +121,18 @@ export const ResultCard = ({ result, onChat, onSpeak, lang }) => {
   const t = translations[lang];
 
   const handleSpeakReport = () => {
-    const text = `
-      Disease Name: ${result.disease_name}. 
-      Severity: ${result.severity}. 
-      What happened: ${result.what_happened}. 
-      Advice: ${result.ai_advice}
-    `;
-    onSpeak(text);
+    if (isPlaying) {
+      onStop();
+    } else {
+      const text = `
+        Disease Name: ${result.disease_name}. 
+        Severity: ${result.severity}. 
+        What happened: ${result.what_happened}. 
+        Advice: ${result.ai_advice}.
+        ${result.soil_analysis ? `Soil Analysis: ${result.soil_analysis.status}. Best crops: ${result.soil_analysis.best_crops.join(', ')}.` : ''}
+      `;
+      onSpeak(text);
+    }
   };
 
   const scrollToBottom = () => {
@@ -163,9 +171,12 @@ export const ResultCard = ({ result, onChat, onSpeak, lang }) => {
   };
 
   const severityColors = {
-    'Low Risk': 'bg-emerald-100 text-emerald-700 border-emerald-200',
-    'Medium Risk': 'bg-amber-100 text-amber-700 border-amber-200',
-    'High Risk': 'bg-red-100 text-red-700 border-red-200',
+    'Low': 'bg-emerald-100 text-emerald-700 border-emerald-100',
+    'Medium': 'bg-amber-100 text-amber-700 border-amber-100',
+    'High': 'bg-red-100 text-red-700 border-red-100',
+    'Low Risk': 'bg-emerald-100 text-emerald-700 border-emerald-100',
+    'Medium Risk': 'bg-amber-100 text-amber-700 border-amber-100',
+    'High Risk': 'bg-red-100 text-red-700 border-red-100',
   };
 
   return (
@@ -198,13 +209,15 @@ export const ResultCard = ({ result, onChat, onSpeak, lang }) => {
             <div className="bg-white/80 backdrop-blur p-4 rounded-2xl border border-emerald-100 flex items-center gap-3">
               <button 
                 onClick={handleSpeakReport}
-                className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center hover:bg-emerald-200 transition-colors"
-                title="Listen to Report"
+                className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
+                  isPlaying ? 'bg-red-100 hover:bg-red-200' : 'bg-emerald-100 hover:bg-emerald-200'
+                }`}
+                title={isPlaying ? t.stop : t.listen}
               >
-                <Volume2 className="text-emerald-600" size={20} />
+                {isPlaying ? <X className="text-red-600" size={20} /> : <Volume2 className="text-emerald-600" size={20} />}
               </button>
               <div>
-                <p className="text-[10px] uppercase font-bold text-stone-400 tracking-widest">{t.listen}</p>
+                <p className="text-[10px] uppercase font-bold text-stone-400 tracking-widest">{isPlaying ? t.stop : t.listen}</p>
                 <p className="text-sm font-medium text-stone-700">{t.voice}</p>
               </div>
             </div>
@@ -227,7 +240,7 @@ export const ResultCard = ({ result, onChat, onSpeak, lang }) => {
           <div className="bg-stone-50 rounded-3xl p-6 border border-stone-100">
             <h3 className="text-lg font-serif font-medium mb-4 text-stone-800">{t.immediateActions}</h3>
             <div className="grid sm:grid-cols-2 gap-4">
-              {result.immediate_actions.map((action, i) => (
+              {(result.immediate_actions || []).map((action, i) => (
                 <div key={i} className="flex gap-3 bg-white p-4 rounded-2xl border border-stone-100 shadow-sm">
                   <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-xs font-bold shrink-0">
                     {i + 1}
@@ -247,17 +260,17 @@ export const ResultCard = ({ result, onChat, onSpeak, lang }) => {
             <div className="grid md:grid-cols-3 gap-6">
               <div className="p-6 rounded-3xl border border-stone-100 bg-white shadow-sm flex flex-col">
                 <h4 className="text-xs font-bold text-stone-400 uppercase tracking-widest mb-4">{t.chemical}</h4>
-                <p className="text-sm font-bold text-stone-900 mb-1">{result.treatment.chemical.name}</p>
-                <p className="text-xs text-stone-500 mb-3">{result.treatment.chemical.dosage}</p>
-                <p className="text-xs text-stone-600 leading-relaxed">{result.treatment.chemical.how_to_spray}</p>
+                <p className="text-sm font-bold text-stone-900 mb-1">{result.treatment?.chemical?.name || 'N/A'}</p>
+                <p className="text-xs text-stone-500 mb-3">{result.treatment?.chemical?.dosage || ''}</p>
+                <p className="text-xs text-stone-600 leading-relaxed">{result.treatment?.chemical?.how_to_spray || ''}</p>
               </div>
               <div className="p-6 rounded-3xl border border-emerald-100 bg-emerald-50/30 flex flex-col">
                 <h4 className="text-xs font-bold text-emerald-600 uppercase tracking-widest mb-4">{t.organic}</h4>
-                <p className="text-sm font-medium text-stone-800 leading-relaxed">{result.treatment.organic.name}</p>
+                <p className="text-sm font-medium text-stone-800 leading-relaxed">{result.treatment?.organic?.name || 'N/A'}</p>
               </div>
               <div className="p-6 rounded-3xl border border-stone-100 bg-white shadow-sm flex flex-col">
                 <h4 className="text-xs font-bold text-stone-400 uppercase tracking-widest mb-4">{t.fertilizer}</h4>
-                <p className="text-sm font-medium text-stone-800 leading-relaxed">{result.treatment.fertilizer.name}</p>
+                <p className="text-sm font-medium text-stone-800 leading-relaxed">{result.treatment?.fertilizer?.name || 'N/A'}</p>
               </div>
             </div>
           </div>
@@ -270,7 +283,7 @@ export const ResultCard = ({ result, onChat, onSpeak, lang }) => {
                 {t.prevention}
               </h3>
               <ul className="space-y-3">
-                {result.prevention_tips.map((tip, i) => (
+                {(result.prevention_tips || []).map((tip, i) => (
                   <li key={i} className="text-sm text-stone-600 flex gap-2">
                     <span className="text-emerald-500 font-bold">•</span>
                     {tip}
@@ -338,7 +351,7 @@ export const ResultCard = ({ result, onChat, onSpeak, lang }) => {
                           stroke="#3b82f6"
                           strokeWidth="10"
                           strokeDasharray={2 * Math.PI * 54}
-                          strokeDashoffset={(2 * Math.PI * 54) * (1 - Math.min(parseInt(result.cure_time || '0') / 30, 1))}
+                          strokeDashoffset={(2 * Math.PI * 54) * (1 - Math.min((isNaN(parseInt(result.cure_time)) ? 0 : parseInt(result.cure_time)) / 30, 1))}
                           strokeLinecap="round"
                           fill="transparent"
                           className="transition-all duration-1000 ease-out"
@@ -346,7 +359,9 @@ export const ResultCard = ({ result, onChat, onSpeak, lang }) => {
                       </svg>
                       <div className="absolute inset-0 flex flex-col items-center justify-center">
                         <TrendingUp size={16} className="text-stone-300 mb-1" />
-                        <span className="text-2xl font-bold text-stone-800">{parseInt(result.cure_time || '0')}</span>
+                        <span className="text-2xl font-bold text-stone-800">
+                          {isNaN(parseInt(result.cure_time)) ? '0' : parseInt(result.cure_time)}
+                        </span>
                         <span className="text-[10px] font-bold text-stone-400 uppercase tracking-tighter">Days</span>
                       </div>
                     </div>
@@ -359,8 +374,77 @@ export const ResultCard = ({ result, onChat, onSpeak, lang }) => {
                   <TrendingDown className="text-red-400" size={18} />
                   <h4 className="text-xs font-bold uppercase tracking-widest opacity-70">{t.impact}</h4>
                 </div>
-                <p className="text-lg font-medium">{result.yield_impact}</p>
+                <p className="text-lg font-medium">{result.yield_impact || 'Under Process'}</p>
               </div>
+
+              {result.soil_analysis && (
+                <div className="p-6 bg-amber-50 border border-amber-100 rounded-3xl space-y-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Camera className="text-amber-600" size={18} />
+                    <h4 className="text-xs font-bold text-amber-600 uppercase tracking-widest">Soil Health Report</h4>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm font-bold text-stone-800 mb-1">{result.soil_analysis.type_detected} ({result.soil_analysis.color})</p>
+                      <p className="text-xs text-stone-500 mb-3">{result.soil_analysis.status || 'Under Process'}</p>
+                      
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Recommended Crops</p>
+                        <div className="flex flex-wrap gap-1">
+                          {(result.soil_analysis.best_crops || []).map((crop, i) => (
+                            <span key={i} className="px-2 py-0.5 bg-white text-amber-700 text-[10px] font-bold rounded-full border border-amber-100">
+                              {crop}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-3">
+                      {result.soil_analysis.fruit_trees && (
+                        <div className="space-y-2">
+                          <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Fruit Trees</p>
+                          <div className="flex flex-wrap gap-1">
+                            {(result.soil_analysis.fruit_trees || []).map((tree, i) => (
+                              <span key={i} className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-full border border-emerald-200">
+                                {tree}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {result.soil_analysis.improvement_suggestions && (
+                        <div className="space-y-2">
+                          <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Soil Improvement</p>
+                          <ul className="space-y-1">
+                            {(result.soil_analysis.improvement_suggestions || []).map((sug, i) => (
+                              <li key={i} className="text-[10px] text-stone-600 flex gap-1">
+                                <span className="text-amber-500">•</span> {sug}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {result.soil_analysis.moisture_estimate !== undefined && (
+                    <div className="pt-4 border-t border-amber-100">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Estimated Moisture</span>
+                        <span className="text-xs font-bold text-amber-600">{result.soil_analysis.moisture_estimate}%</span>
+                      </div>
+                      <div className="w-full h-1.5 bg-stone-200 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-amber-500 transition-all duration-1000" 
+                          style={{ width: `${result.soil_analysis.moisture_estimate}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {result.growth_stage && (
                 <div className="p-6 bg-emerald-50 border border-emerald-100 rounded-3xl">
@@ -384,10 +468,10 @@ export const ResultCard = ({ result, onChat, onSpeak, lang }) => {
 
               <div className="flex justify-between items-center p-4 border border-stone-100 rounded-2xl">
                 <div className="flex items-center gap-2">
-                  <DollarSign className="text-stone-400" size={16} />
+                  <span className="text-xs font-bold text-stone-400 uppercase tracking-widest">₹</span>
                   <span className="text-xs font-bold text-stone-400 uppercase tracking-widest">{t.cost}</span>
                 </div>
-                <span className="font-bold text-emerald-600">{result.cost_estimate}</span>
+                <span className="font-bold text-emerald-600">{result.cost_estimate || 'Under Process'}</span>
               </div>
             </div>
           </div>
@@ -397,29 +481,29 @@ export const ResultCard = ({ result, onChat, onSpeak, lang }) => {
             <div className="bg-stone-900 text-white rounded-[32px] p-8 space-y-6">
               <div className="flex items-center justify-between">
                 <h3 className="text-xl font-serif font-medium flex items-center gap-2">
-                  <DollarSign className="text-emerald-400" size={20} />
-                  {t.priceTrends}: {result.crop_price_trends.crop_name}
+                  <span className="text-emerald-400">₹</span>
+                  {t.priceTrends}: {result.crop_price_trends.crop_name || 'N/A'}
                 </h3>
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-white/10 p-5 rounded-2xl border border-white/5">
                   <p className="text-[10px] uppercase font-bold opacity-50 mb-1 tracking-widest">{t.past}</p>
-                  <p className="text-xl font-medium">{result.crop_price_trends.past_price}</p>
+                  <p className="text-xl font-medium">{result.crop_price_trends.past_price || 'N/A'}</p>
                 </div>
                 <div className="bg-emerald-500/10 p-5 rounded-2xl border border-emerald-500/20">
                   <p className="text-[10px] uppercase font-bold text-emerald-400 mb-1 tracking-widest">{t.current}</p>
-                  <p className="text-xl font-bold text-emerald-400">{result.crop_price_trends.present_price}</p>
+                  <p className="text-xl font-bold text-emerald-400">{result.crop_price_trends.present_price || 'N/A'}</p>
                 </div>
                 <div className="bg-white/10 p-5 rounded-2xl border border-white/5">
                   <p className="text-[10px] uppercase font-bold opacity-50 mb-1 tracking-widest">{t.future}</p>
-                  <p className="text-xl font-medium">{result.crop_price_trends.future_price}</p>
+                  <p className="text-xl font-medium">{result.crop_price_trends.future_price || 'N/A'}</p>
                 </div>
               </div>
 
               <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
                 <p className="text-xs text-stone-400 leading-relaxed italic">
-                  <span className="font-bold text-stone-300">{t.reason}:</span> {result.crop_price_trends.prediction_reason}
+                  <span className="font-bold text-stone-300">{t.reason}:</span> {result.crop_price_trends.prediction_reason || 'N/A'}
                 </p>
               </div>
             </div>
@@ -433,9 +517,11 @@ export const ResultCard = ({ result, onChat, onSpeak, lang }) => {
               </h4>
               <ul className="space-y-2">
                 {(result.govt_schemes || []).map((scheme, i) => (
-                  <li key={i} className="text-xs text-stone-500 bg-stone-50 p-2 rounded-lg border border-stone-100">
-                    {typeof scheme === 'string' ? scheme : scheme.name}
-                  </li>
+                  scheme && (
+                    <li key={i} className="text-xs text-stone-500 bg-stone-50 p-2 rounded-lg border border-stone-100">
+                      {typeof scheme === 'string' ? scheme : scheme.name}
+                    </li>
+                  )
                 ))}
               </ul>
             </div>
@@ -486,7 +572,7 @@ export const ResultCard = ({ result, onChat, onSpeak, lang }) => {
             </div>
           )}
           <AnimatePresence initial={false}>
-            {chatMessages.map((msg, i) => (
+            {(chatMessages || []).map((msg, i) => (
               <motion.div
                 key={i}
                 initial={{ opacity: 0, y: 10 }}
@@ -508,13 +594,24 @@ export const ResultCard = ({ result, onChat, onSpeak, lang }) => {
                   )}
                   {msg.text}
                   {msg.role === 'ai' && (
-                    <button
-                      onClick={() => onSpeak(msg.text)}
-                      className="absolute -right-10 top-0 p-2 bg-white rounded-full border border-stone-100 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity text-emerald-600 hover:bg-emerald-50"
-                      title={t.listenResponse}
-                    >
-                      <Volume2 size={14} />
-                    </button>
+                    <div className="absolute -right-12 top-0 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => onSpeak(msg.text)}
+                        className="p-2 bg-white rounded-full border border-stone-100 shadow-sm text-emerald-600 hover:bg-emerald-50"
+                        title={t.listenResponse}
+                      >
+                        <Volume2 size={14} />
+                      </button>
+                      {isPlaying && (
+                        <button
+                          onClick={onStop}
+                          className="p-2 bg-white rounded-full border border-stone-100 shadow-sm text-red-500 hover:bg-red-50"
+                          title={t.stop}
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               </motion.div>

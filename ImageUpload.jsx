@@ -7,9 +7,11 @@ function cn(...inputs) {
   return twMerge(clsx(inputs));
 }
 
-export const ImageUpload = ({ onImageSelect, disabled, label = "Upload Leaf Image" }) => {
-  const [preview, setPreview] = useState(null);
+export const ImageUpload = ({ onImageSelect, disabled, label = "Upload Leaf Image", value }) => {
+  const [internalPreview, setInternalPreview] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
+
+  const preview = value !== undefined ? value : internalPreview;
 
   const handleFile = useCallback((file) => {
     if (!file.type.startsWith('image/')) return;
@@ -17,11 +19,11 @@ export const ImageUpload = ({ onImageSelect, disabled, label = "Upload Leaf Imag
     const reader = new FileReader();
     reader.onloadend = () => {
       const base64 = reader.result;
-      setPreview(base64);
+      if (value === undefined) setInternalPreview(base64);
       onImageSelect(base64);
     };
     reader.readAsDataURL(file);
-  }, [onImageSelect]);
+  }, [onImageSelect, value]);
 
   const onDrop = useCallback((e) => {
     e.preventDefault();
@@ -36,6 +38,12 @@ export const ImageUpload = ({ onImageSelect, disabled, label = "Upload Leaf Imag
     const file = e.target.files?.[0];
     if (file) handleFile(file);
   }, [handleFile, disabled]);
+
+  const handleClear = (e) => {
+    e.stopPropagation();
+    if (value === undefined) setInternalPreview(null);
+    onImageSelect(null);
+  };
 
   return (
     <div className="w-full max-w-2xl mx-auto">
@@ -53,7 +61,7 @@ export const ImageUpload = ({ onImageSelect, disabled, label = "Upload Leaf Imag
           <div className="relative w-full h-full flex items-center justify-center">
             <img src={preview} alt="Preview" className="max-h-[400px] rounded-2xl shadow-lg object-contain" />
             <button
-              onClick={(e) => { e.stopPropagation(); setPreview(null); }}
+              onClick={handleClear}
               className="absolute -top-4 -right-4 p-2 bg-white rounded-full shadow-md hover:bg-red-50 text-red-500 transition-colors"
             >
               <X size={20} />
